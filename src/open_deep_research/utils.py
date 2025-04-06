@@ -5,10 +5,11 @@ import random
 import concurrent
 import aiohttp
 import time
-import logging
+import re
+import fitz
 from typing import List, Optional, Dict, Any, Union
 from urllib.parse import unquote
-
+import pandas as pd
 from exa_py import Exa
 from linkup import LinkupClient
 from tavily import AsyncTavilyClient
@@ -1126,7 +1127,48 @@ async def google_search_async(search_queries: Union[str, List[str]], max_results
         if executor:
             executor.shutdown(wait=False)
 
+### --- NEW ADDITIONS: Local Document Ingestion --- ###
 
+from PyPDF2 import PdfReader
+from langchain.text_splitter import CharacterTextSplitter
+def get_pdf_chunks_with_metadata(pdf_folder_path: str) -> (List[str], List[Dict[str, Any]]):
+    """
+    Reads all PDFs in the specified folder and returns chunks and their metadata.
+    Metadata includes: filename, page number, chunk index.
+    """
+    all_chunks = []
+    metadata_list = []
+
+    text_splitter = CharacterTextSplitter(
+        separator="\n",
+        chunk_size=1000,
+        chunk_overlap=200,
+        length_function=len
+    )
+
+    for filename in os.listdir(pdf_folder_path):
+        if not filename.endswith(".pdf"):
+            continue
+        
+        file_path = os.path.join(pdf_folder_path, filename)
+        pdf_reader = PdfReader(file_path)
+        
+        for page_num, page in enumerate(pdf_reader.pages):
+            page_text = page.extract_text()
+            if not page_text:
+                continue
+
+            chunks = text_splitter.split_text(page_text)
+            for idx, chunk in enumerate(chunks):
+                all_chunks.append(chunk)
+                metadata_list.append({
+                    "filename": filename,
+                    "page_number": page_num + 1,
+                    "chunk_index": idx,
+                    # Optionally add: "section_header": ...
+                })
+    
+    return all_chunks, metadata_list
 
 async def select_and_execute_search(search_api: str, query_list: list[str], params_to_pass: dict) -> str:
     """Select and execute the appropriate search API.

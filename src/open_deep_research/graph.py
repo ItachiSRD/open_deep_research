@@ -1,9 +1,8 @@
-from typing import Literal
-
+from typing import *
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
-
+from langchain_openai import OpenAIEmbeddings
 from langgraph.constants import Send
 from langgraph.graph import START, END, StateGraph
 from langgraph.types import interrupt, Command
@@ -34,10 +33,76 @@ from open_deep_research.utils import (
     format_sections, 
     get_config_value, 
     get_search_params, 
-    select_and_execute_search
+    select_and_execute_search,
+    get_pdf_chunks_with_metadata
 )
+import os
+
+vector_db = None
 
 ## Nodes -- 
+from langchain.vectorstores import FAISS
+
+def save_vector_store(vector_db: FAISS, folder_path: str):
+    vector_db.save_local(os.path.join(folder_path, "faiss_index"))
+
+def load_vector_store(folder_path: str, embeddings: OpenAIEmbeddings) -> FAISS:
+    try:
+        return FAISS.load_local(os.path.join(folder_path, "faiss_index"), embeddings=embeddings, allow_dangerous_deserialization=True )
+    except Exception as e:
+        print(f"[load_vector_store] Error loading vector store: {e}")
+        return None
+
+## === Local Document Ingestion === ##
+def load_documents(state: ReportState, config: RunnableConfig) -> Dict[str, Any]:
+    """
+    Loads local PDF/Excel files, extracts and chunks text, and indexes the content using FAISS.
+    
+    This node:
+      - Reads the list of file paths from state (e.g., state["uploaded_files"])
+      - For each file, it uses load_pdf or load_excel from utils.py
+      - Chunks the extracted text using chunk_text
+      - Generates embeddings via OpenAI's text-embedding-3-large
+      - Stores the embeddings and associated metadata in a FAISS vector store
+      - Returns the vector store in state under "doc_vector_db"
+    
+    Args:
+        state: Report state containing, for example, an "uploaded_files" key with file paths.
+        config: Configuration for the workflow (not used directly here).
+    
+    Returns:
+        Dict containing the key "doc_vector_db" with the FAISS vector store (or None if no files were ingested).
+    """
+    
+    folder_path = os.environ.get("FOLDER_PATH")
+
+    useLocalFile = state["useLocalFile"]
+    if useLocalFile == False:
+        folder_path = ""
+    
+    if not folder_path or not os.path.isdir(folder_path):
+        print(f"[load_documents] Invalid folder path: {folder_path}")
+        return {"doc_vector_db": None}
+
+    cache_path = os.path.join(folder_path, "faiss_index")
+    global vector_db
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+    if os.path.exists(cache_path):
+        print("[load_documents] Found existing FAISS index. Loading from disk.")
+        vector_db = load_vector_store(folder_path, embeddings)
+    else:
+        print(f"[load_documents] No cache found. Extracting and embedding documents...")
+        chunks, metadata = get_pdf_chunks_with_metadata(folder_path)
+        if chunks:
+            print(f"[load_documents] Total chunks generated: {len(chunks)}")
+            vector_db = FAISS.from_texts(texts=chunks, embedding=embeddings, metadatas=metadata)
+            save_vector_store(vector_db, folder_path)
+        else:
+            print("[load_documents] No text chunks generated.")
+            vector_db = None
+
+    return {"useLocalFile": useLocalFile}
+
 
 async def generate_report_plan(state: ReportState, config: RunnableConfig):
     """Generate the initial report plan with sections.
@@ -164,7 +229,7 @@ def human_feedback(state: ReportState, config: RunnableConfig) -> Command[Litera
     if isinstance(feedback, bool) and feedback is True:
         # Treat this as approve and kick off section writing
         return Command(goto=[
-            Send("build_section_with_web_research", {"topic": topic, "section": s, "search_iterations": 0}) 
+            Send("build_section_with_web_research", {"topic": topic, "section": s, "search_iterations": 0, "useLocalFile": state["useLocalFile"]}) 
             for s in sections 
             if s.research
         ])
@@ -244,10 +309,28 @@ async def search_web(state: SectionState, config: RunnableConfig):
     # Web search
     query_list = [query.search_query for query in search_queries]
 
-    # Search the web with parameters
-    source_str = await select_and_execute_search(search_api, query_list, params_to_pass)
 
-    return {"source_str": source_str, "search_iterations": state["search_iterations"] + 1}
+    local_context = ""
+    
+    if vector_db:
+        local_results = []
+        for query in query_list:
+            # Retrieve top 5 similar document chunks for each query
+            retrieved_docs = vector_db.similarity_search(query, k=5)
+            local_results.extend([doc.page_content for doc in retrieved_docs])
+        local_context = "\n\n".join(local_results)
+
+    useLocalFile = state["useLocalFile"]
+
+    web_context = ""
+    if useLocalFile == False:
+        web_context = await select_and_execute_search(search_api, query_list, params_to_pass)
+
+    # --- Combine Local and Web Results ---
+    # You can adjust how you combine or rerank the results here.
+    combined_context = "\n\n".join(filter(None, [local_context, web_context]))
+
+    return {"source_str": combined_context, "search_iterations": state["search_iterations"] + 1}
 
 def write_section(state: SectionState, config: RunnableConfig) -> Command[Literal[END, "search_web"]]:
     """Write a section of the report and evaluate if more research is needed.
@@ -311,8 +394,8 @@ def write_section(state: SectionState, config: RunnableConfig) -> Command[Litera
         # Allocate a thinking budget for claude-3-7-sonnet-latest as the planner model
         reflection_model = init_chat_model(model=planner_model, 
                                            model_provider=planner_provider, 
-                                           max_tokens=20_000, 
-                                           thinking={"type": "enabled", "budget_tokens": 16_000}).with_structured_output(Feedback)
+                                           max_tokens=2000, 
+                                           thinking={"type": "enabled", "budget_tokens": 1500}).with_structured_output(Feedback)
     else:
         reflection_model = init_chat_model(model=planner_model, 
                                            model_provider=planner_provider).with_structured_output(Feedback)
@@ -460,6 +543,7 @@ section_builder.add_edge("search_web", "write_section")
 
 # Add nodes
 builder = StateGraph(ReportState, input=ReportStateInput, output=ReportStateOutput, config_schema=Configuration)
+builder.add_node("load_documents", load_documents)  # New ingestion node
 builder.add_node("generate_report_plan", generate_report_plan)
 builder.add_node("human_feedback", human_feedback)
 builder.add_node("build_section_with_web_research", section_builder.compile())
@@ -468,7 +552,8 @@ builder.add_node("write_final_sections", write_final_sections)
 builder.add_node("compile_final_report", compile_final_report)
 
 # Add edges
-builder.add_edge(START, "generate_report_plan")
+builder.add_edge(START, "load_documents")
+builder.add_edge("load_documents", "generate_report_plan")
 builder.add_edge("generate_report_plan", "human_feedback")
 builder.add_edge("build_section_with_web_research", "gather_completed_sections")
 builder.add_conditional_edges("gather_completed_sections", initiate_final_section_writing, ["write_final_sections"])

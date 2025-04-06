@@ -2,6 +2,151 @@
  
 Open Deep Research is an open source assistant that automates research and produces customizable reports on any topic. It allows you to customize the research and writing process with specific models, prompts, report structure, and search tools. 
 
+Sure! Here's a complete and production-ready `README.md` for your project. It includes an overview, setup instructions, API documentation for `/stream_report` and `/human_feedback`, and local ingestion details.
+
+---
+
+```markdown
+# 🧠 Open Deep Research — AI-Powered Report Generation with LangGraph
+
+This project is an AI-driven research and report generation system built using **LangGraph**, **OpenAI**, **FAISS**, and **FastAPI**. It supports real-time research planning, local document ingestion, human feedback, and streaming report generation.
+
+---
+
+## 🚀 Features
+
+- 📄 Local PDF/Excel document ingestion and semantic chunking
+- 🔍 Hybrid RAG pipeline with FAISS + Web Search (Tavily)
+- 🧠 Report generation using OpenAI + Claude + Groq models
+- 🔁 LangGraph-powered streaming and state management
+- ✅ Supports human feedback + resume functionality
+
+---
+
+## 🛠️ Setup Instructions
+
+### 1. Clone the Repository
+```bash
+git clone https://github.com/ItachiSRD/open_deep_research.git
+cd open_deep_research
+```
+
+### 2. Create a `.env` File
+
+```env
+OPENAI_API_KEY=your_openai_key
+ANTHROPIC_API_KEY=your_claude_key
+TAVILY_API_KEY=your_tavily_key
+```
+
+> ⚠️ Ensure this file is added to `.gitignore` to avoid committing secrets.
+
+### 3. Install Dependencies
+```bash
+conda create -n langgraph python=3.10 -y
+conda activate langgraph
+
+pip install -e .
+
+pip uninstall numpy
+pip uninstall pandas
+conda install pandas
+conda install numpy
+conda install faiss-gpu
+```
+
+---
+
+## 🧪 API Endpoints
+
+### 🔄 `/stream_report`
+
+Generates an AI research report based on user-provided topic input.
+
+#### Request
+```http
+POST /stream_report
+Content-Type: application/json
+
+{
+  "topic": "Impact of AI in Education",
+  "useLocalFile": true
+}
+```
+
+#### Response (Streaming)
+- `type: section` — Intermediate content from sections
+- `type: completed` — Final compiled report
+
+#### Example:
+```json
+{
+  "type": "completed",
+  "content": "Here is the full research report on AI in education..."
+}
+```
+
+---
+
+### 🙋 `/human_feedback`
+
+Used to provide user feedback or resume interrupted sessions.
+
+#### Request
+```http
+POST /human_feedback
+Content-Type: application/json
+
+{
+  "resume": true
+}
+```
+
+- If `resume = String`, the system will use this feedback to improve its report Structure.
+- If `resume = true`, report structure is finalised.
+
+#### Response (Streaming)
+- `type: interrupt` — When human input is awaited
+- `type: completed` — Final report output after resume
+
+---
+
+## 📂 Local Document Ingestion
+
+### How it Works:
+1. Place your PDFs/Excels in `src/open_deep_research/data/`.
+2. Set `useLocalFile: true` in `/stream_report`.
+3. The app:
+   - Loads documents
+   - Extracts structured text with metadata
+   - Generates embeddings using `text-embedding-3-large`
+   - Stores and caches them via FAISS
+
+### Vector DB Caching
+- Embeddings are saved to disk (in `.faiss` and `.pkl`).
+- Reused on subsequent runs to avoid recomputation.
+
+---
+
+## 📸 Architecture
+
+```plaintext
+User → /stream_report → LangGraph → [Local FAISS + Web Search] → AI Planner/Writers → Streamed Report
+                      → /human_feedback → Pause & Resume with state
+```
+
+---
+
+## ✅ TODO / Improvements
+
+- Add LangChainEval metrics
+- UI for document upload
+- Streamlit frontend (WIP)
+- Local GPT support
+
+---
+
+
 ![report-generation](https://github.com/user-attachments/assets/6595d5cd-c981-43ec-8e8b-209e4fefc596)
 
 ## 🚀 Quickstart
@@ -230,3 +375,42 @@ Follow the [quickstart](#-quickstart) to start LangGraph server locally.
 ### Hosted deployment
  
 You can easily deploy to [LangGraph Platform](https://langchain-ai.github.io/langgraph/concepts/#deployment-options). 
+
+```
+open_deep_research
+├─ .env
+├─ examples
+│  ├─ arxiv.md
+│  ├─ inference-market-gpt45.md
+│  ├─ inference-market.md
+│  └─ pubmed.md
+├─ langgraph.json
+├─ LICENSE
+├─ pyproject.toml
+├─ README.md
+└─ src
+   └─ open_deep_research
+      ├─ .ipynb_checkpoints
+      │  └─ graph-checkpoint.ipynb
+      ├─ api
+      │  ├─ .env
+      │  ├─ main.py
+      │  ├─ routes.py
+      │  └─ __pycache__
+      │     ├─ main.cpython-310.pyc
+      │     ├─ main.cpython-312.pyc
+      │     ├─ routes.cpython-310.pyc
+      │     ├─ routes.cpython-312.pyc
+      │     └─ streaming.cpython-312.pyc
+      ├─ configuration.py
+      ├─ data
+      ├─faiss_index
+      │   ├─ index.faiss
+      │   └─ index.pkl
+      ├─ graph.ipynb
+      ├─ graph.py
+      ├─ prompts.py
+      ├─ state.py
+      ├─ utils.py
+      ├─ __init__.py
+```
