@@ -1,13 +1,11 @@
-# Open Deep Research
+# Open Deep Research Original
  
 Open Deep Research is an open source assistant that automates research and produces customizable reports on any topic. It allows you to customize the research and writing process with specific models, prompts, report structure, and search tools. 
-
-Sure! Here's a complete and production-ready `README.md` for your project. It includes an overview, setup instructions, API documentation for `/stream_report` and `/human_feedback`, and local ingestion details.
 
 ---
 
 ```markdown
-# 🧠 Open Deep Research — AI-Powered Report Generation with LangGraph
+# 🧠 Open Deep Research — AI-Powered Report Generation with LangGraph (Added)
 
 This project is an AI-driven research and report generation system built using **LangGraph**, **OpenAI**, **FAISS**, and **FastAPI**. It supports real-time research planning, local document ingestion, human feedback, and streaming report generation.
 
@@ -23,9 +21,44 @@ This project is an AI-driven research and report generation system built using *
 
 ---
 
+### File Structure
+
+```
+open_deep_research
+├─ .env
+├─ examples
+│  ├─ arxiv.md
+│  ├─ inference-market-gpt45.md
+│  ├─ inference-market.md
+│  └─ pubmed.md
+├─ langgraph.json
+├─ LICENSE
+├─ pyproject.toml
+├─ README.md
+└─ src
+   └─ open_deep_research
+      ├─ api
+      │  ├─ .env
+      │  ├─ main.py
+      │  ├─ routes.py 
+      ├─ configuration.py
+      ├─ data
+      ├─faiss_index
+      │   ├─ index.faiss
+      │   └─ index.pkl
+      ├─ graph.ipynb
+      ├─ graph.py
+      ├─ prompts.py
+      ├─ state.py
+      ├─ utils.py
+      ├─ __init__.py
+```
+
+
 ## 🛠️ Setup Instructions
 
 ### 1. Clone the Repository
+
 ```bash
 git clone https://github.com/ItachiSRD/open_deep_research.git
 cd open_deep_research
@@ -33,7 +66,7 @@ cd open_deep_research
 
 ### 2. Create a `.env` File
 
-```env
+```bash
 OPENAI_API_KEY=your_openai_key
 ANTHROPIC_API_KEY=your_claude_key
 TAVILY_API_KEY=your_tavily_key
@@ -43,16 +76,14 @@ TAVILY_API_KEY=your_tavily_key
 
 ### 3. Install Dependencies
 ```bash
-conda create -n langgraph python=3.10 -y
+conda create --name <env> --file requirements.txt 
 conda activate langgraph
+```
+### 4. Start Server
 
-pip install -e .
-
-pip uninstall numpy
-pip uninstall pandas
-conda install pandas
-conda install numpy
-conda install faiss-gpu
+```bash
+cd src
+uvicorn open_deep_research.api.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 ---
@@ -169,57 +200,6 @@ Open Deep Research uses a planner LLM for report planning and a writer LLM for r
 * You can select any model that is integrated [with the `init_chat_model()` API](https://python.langchain.com/docs/how_to/chat_models_universal_init/)
 * See full list of supported integrations [here](https://python.langchain.com/api_reference/langchain/chat_models/langchain.chat_models.base.init_chat_model.html)
 
-### Using the package
-
-```bash
-pip install open-deep-research
-```
-
-As mentioned above, ensure API keys for LLMs and search tools are set: 
-```bash
-export TAVILY_API_KEY=<your_tavily_api_key>
-export ANTHROPIC_API_KEY=<your_anthropic_api_key>
-```
-
-See [src/open_deep_research/graph.ipynb](src/open_deep_research/graph.ipynb) for example usage in a Jupyter notebook:
-
-Compile the graph:
-```python
-from langgraph.checkpoint.memory import MemorySaver
-from open_deep_research.graph import builder
-memory = MemorySaver()
-graph = builder.compile(checkpointer=memory)
-```
-
-Run the graph with a desired topic and configuration:
-```python
-import uuid 
-thread = {"configurable": {"thread_id": str(uuid.uuid4()),
-                           "search_api": "tavily",
-                           "planner_provider": "anthropic",
-                           "planner_model": "claude-3-7-sonnet-latest",
-                           "writer_provider": "anthropic",
-                           "writer_model": "claude-3-5-sonnet-latest",
-                           "max_search_depth": 1,
-                           }}
-
-topic = "Overview of the AI inference market with focus on Fireworks, Together.ai, Groq"
-async for event in graph.astream({"topic":topic,}, thread, stream_mode="updates"):
-    print(event)
-```
-
-The graph will stop when the report plan is generated, and you can pass feedback to update the report plan:
-```python
-from langgraph.types import Command
-async for event in graph.astream(Command(resume="Include a revenue estimate (ARR) in the sections"), thread, stream_mode="updates"):
-    print(event)
-```
-
-When you are satisfied with the report plan, you can pass `True` to proceed to report generation:
-```python
-async for event in graph.astream(Command(resume=True), thread, stream_mode="updates"):
-    print(event)
-```
 
 ### Running LangGraph Studio UI locally
 
@@ -376,41 +356,3 @@ Follow the [quickstart](#-quickstart) to start LangGraph server locally.
  
 You can easily deploy to [LangGraph Platform](https://langchain-ai.github.io/langgraph/concepts/#deployment-options). 
 
-```
-open_deep_research
-├─ .env
-├─ examples
-│  ├─ arxiv.md
-│  ├─ inference-market-gpt45.md
-│  ├─ inference-market.md
-│  └─ pubmed.md
-├─ langgraph.json
-├─ LICENSE
-├─ pyproject.toml
-├─ README.md
-└─ src
-   └─ open_deep_research
-      ├─ .ipynb_checkpoints
-      │  └─ graph-checkpoint.ipynb
-      ├─ api
-      │  ├─ .env
-      │  ├─ main.py
-      │  ├─ routes.py
-      │  └─ __pycache__
-      │     ├─ main.cpython-310.pyc
-      │     ├─ main.cpython-312.pyc
-      │     ├─ routes.cpython-310.pyc
-      │     ├─ routes.cpython-312.pyc
-      │     └─ streaming.cpython-312.pyc
-      ├─ configuration.py
-      ├─ data
-      ├─faiss_index
-      │   ├─ index.faiss
-      │   └─ index.pkl
-      ├─ graph.ipynb
-      ├─ graph.py
-      ├─ prompts.py
-      ├─ state.py
-      ├─ utils.py
-      ├─ __init__.py
-```
