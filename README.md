@@ -70,8 +70,13 @@ cd open_deep_research
 OPENAI_API_KEY=your_openai_key
 ANTHROPIC_API_KEY=your_claude_key
 TAVILY_API_KEY=your_tavily_key
+FOLDER_PATH=Folder_where_you_will_store_pdf
 ```
-
+> ⚠️ Please ensure that you change the env file route in src/open_deep_research/api/routes.py
+```python
+load_dotenv("D:\\Intern\\Terrabase\\open_deep_research\\.env")
+#CHANGE THIS
+```
 > ⚠️ Ensure this file is added to `.gitignore` to avoid committing secrets.
 
 ### 3. Install Dependencies
